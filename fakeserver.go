@@ -1,18 +1,13 @@
 package main
 
 import (
+	"flag"
 	"html/template"
 	"math/rand"
 	"net/http"
 )
 
-type Page struct {
-	Title string
-	Links []int
-}
-
-func Handler(w http.ResponseWriter, r *http.Request) {
-	const tpl = `
+const tpl = `
 <html><head><title>{{.Title}}</title></head>
 <body>
 <h1>You're visiting {{.Title}}</h1>
@@ -21,17 +16,48 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 {{range .Links}}<a href="/{{.}}" />{{.}}</a>{{end}}
 </body>
 </html>`
-	var nlinks = rand.Intn(25)
+
+type Page struct {
+	Title string
+	Links []int
+}
+
+type FakeServer struct {
+	addr      string
+	linksPage int
+	maxLinks  int
+	template  *template.Template
+}
+
+func (fs *FakeServer) Handler(w http.ResponseWriter, r *http.Request) {
+	var nlinks = rand.Intn(fs.linksPage)
 	p := Page{Title: r.URL.Path}
 	p.Links = make([]int, nlinks)
 	for i := 0; i < nlinks; i++ {
-		p.Links = append(p.Links, rand.Intn(5000))
+		p.Links = append(p.Links, rand.Intn(fs.maxLinks))
 	}
-	t, _ := template.New("page").Parse(tpl)
-	t.Execute(w, p)
+	fs.template.Execute(w, p)
+}
+
+func (fs *FakeServer) Init() {
+	http.HandleFunc("/", fs.Handler)
+	http.ListenAndServe(fs.addr, nil)
+}
+
+func NewFakeServer(addr string, linksPage, maxLinks int) *FakeServer {
+	return &FakeServer{
+		addr:      addr,
+		linksPage: linksPage,
+		maxLinks:  maxLinks,
+		template:  template.Must(template.New("page").Parse(tpl)),
+	}
 }
 
 func main() {
-	http.HandleFunc("/", Handler)
-	http.ListenAndServe(":8080", nil)
+	var addr = flag.String("a", ":8080", "Listening address")
+	var linksPage = flag.Int("lp", 25, "Max. links per page")
+	var maxLinks = flag.Int("ml", 5000, "Max. different links")
+	flag.Parse()
+	fakeServer := NewFakeServer(*addr, *linksPage, *maxLinks)
+	fakeServer.Init()
 }
